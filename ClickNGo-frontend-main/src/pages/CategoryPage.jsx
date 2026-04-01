@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import ProviderRow from "../components/common/ProviderRow";
 import { CATEGORIES } from "../data/appData";
 import { useCategoryServices } from "../hooks/useCategoryServices";
+import { useAppContext } from "../context/AppContext";
+import { haversineKm, formatDistance } from "../utils/distance";
 
 export default function CategoryPage() {
   const { catId } = useParams();
@@ -10,6 +12,7 @@ export default function CategoryPage() {
   const cat = CATEGORIES.find((c) => c.id === catId);
   const [activeFilter, setActiveFilter] = useState("All");
   const [retryKey, setRetryKey] = useState(0);
+  const { coords } = useAppContext();
 
   const { services, loading, error } = useCategoryServices(catId, retryKey);
 
@@ -26,7 +29,13 @@ export default function CategoryPage() {
       sub: s.description || "",
       rating: 4.5,
       reviews: 0,
-      dist: "Nearby",
+      dist:
+        formatDistance(
+          haversineKm(coords, {
+            latitude: s.latitude,
+            longitude: s.longitude,
+          })
+        ) || s.location_address || "Location unavailable",
       time: `${s.duration_minutes} mins`,
       price: s.price,
       icon: cat?.icon || "/images/GR.png",

@@ -8,18 +8,8 @@ export default function ProviderDashboardPage() {
   const { showToast } = useAppContext();
 
   const [services, setServices] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  const [showServiceForm, setShowServiceForm] = useState(false);
-  const [newSvc, setNewSvc] = useState({
-    category_id: "",
-    title: "",
-    description: "",
-    price: "",
-    duration_minutes: 30,
-    tags: "",
-  });
 
   useEffect(() => {
     fetchData();
@@ -28,49 +18,16 @@ export default function ProviderDashboardPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const { data: svcData } = await fetchWithAuth(`/services/my`);
+      const [{ data: svcData }, { data: metricsData }] = await Promise.all([
+        fetchWithAuth(`/services/my`),
+        fetchWithAuth(`/dashboard/provider`),
+      ]);
       setServices(svcData || []);
-
-      const { data: catData } = await fetchWithAuth(`/services/categories`);
-      setCategories(catData || []);
+      setMetrics(metricsData || null);
     } catch (err) {
       showToast(err.message || "Failed to load dashboard data");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleCreateService(e) {
-    e.preventDefault();
-    try {
-      const tagStr = (newSvc.tags || "").trim();
-      const tags = tagStr ? tagStr.split(",").map((t) => t.trim()).filter(Boolean) : [];
-      const payload = {
-        category_id: newSvc.category_id,
-        title: newSvc.title,
-        description: newSvc.description,
-        price: Number(newSvc.price),
-        duration_minutes: Number(newSvc.duration_minutes),
-        tags,
-      };
-      await fetchWithAuth(`/services`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      showToast("Service created successfully!");
-      setShowServiceForm(false);
-      setNewSvc({
-        category_id: "",
-        title: "",
-        description: "",
-        price: "",
-        duration_minutes: 30,
-        tags: "",
-      });
-      await fetchData();
-      navigate("/provider/availability");
-    } catch (err) {
-      showToast(err.message || "Failed to create service");
     }
   }
 
@@ -93,6 +50,22 @@ export default function ProviderDashboardPage() {
         <p style={{ color: "var(--gray-mid)", fontSize: 14, marginBottom: 32 }}>
           Create services, then add open booking slots.
         </p>
+        {metrics && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 20 }}>
+            {[
+              ["Total bookings", metrics.totalBookings],
+              ["Completed", metrics.completedBookings],
+              ["Pending", metrics.pendingBookings],
+              ["Revenue", `₹${Number(metrics.totalRevenue || 0).toFixed(2)}`],
+              ["Services", metrics.totalServicesOffered],
+            ].map(([label, value]) => (
+              <div key={label} className="glass-card" style={{ padding: 14 }}>
+                <div style={{ fontSize: 12, color: "var(--gray-text)" }}>{label}</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 700, color: "var(--yellow)" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--gray-text)" }}>Loading…</div>
@@ -102,98 +75,14 @@ export default function ProviderDashboardPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 700 }}>My Services</h3>
                 <button
+                  type="button"
                   className="btn btn-yellow"
                   style={{ padding: "8px 16px", fontSize: 13 }}
-                  onClick={() => setShowServiceForm(!showServiceForm)}
+                  onClick={() => navigate("/provider/service/create")}
                 >
-                  {showServiceForm ? "Cancel" : "+ Add Service"}
+                  + Add service
                 </button>
               </div>
-
-              {showServiceForm && (
-                <form
-                  onSubmit={handleCreateService}
-                  style={{
-                    background: "rgba(255,255,255,0.03)",
-                    padding: 20,
-                    borderRadius: 16,
-                    marginBottom: 24,
-                    border: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-                    <div>
-                      <label className="form-label">Category</label>
-                      <select
-                        required
-                        className="form-input"
-                        value={newSvc.category_id}
-                        onChange={(e) => setNewSvc({ ...newSvc, category_id: e.target.value })}
-                      >
-                        <option value="">Select category</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="form-label">Service Title</label>
-                      <input
-                        required
-                        className="form-input"
-                        value={newSvc.title}
-                        onChange={(e) => setNewSvc({ ...newSvc, title: e.target.value })}
-                        placeholder="e.g. Master Haircut"
-                      />
-                    </div>
-                    <div>
-                      <label className="form-label">Price (₹)</label>
-                      <input
-                        required
-                        type="number"
-                        className="form-input"
-                        value={newSvc.price}
-                        onChange={(e) => setNewSvc({ ...newSvc, price: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="form-label">Service Time (in minutes)</label>
-                      <input
-                        required
-                        type="number"
-                        step={15}
-                        min={15}
-                        className="form-input"
-                        value={newSvc.duration_minutes}
-                        onChange={(e) => setNewSvc({ ...newSvc, duration_minutes: e.target.value })}
-                      />
-                    </div>
-                    <div style={{ gridColumn: "span 2" }}>
-                      <label className="form-label">Services Offered</label>
-                      <input
-                        className="form-input"
-                        value={newSvc.tags}
-                        onChange={(e) => setNewSvc({ ...newSvc, tags: e.target.value })}
-                        placeholder="Haircut, Beard, Styling"
-                      />
-                    </div>
-                    <div style={{ gridColumn: "span 2" }}>
-                      <label className="form-label">Description</label>
-                      <textarea
-                        required
-                        className="form-input"
-                        value={newSvc.description}
-                        onChange={(e) => setNewSvc({ ...newSvc, description: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <button type="submit" className="btn btn-glass" style={{ width: "100%" }}>
-                    Save Service
-                  </button>
-                </form>
-              )}
 
               {services.length === 0 ? (
                 <div style={{ color: "var(--gray-text)", fontSize: 14 }}>No services listed yet.</div>
@@ -209,6 +98,13 @@ export default function ProviderDashboardPage() {
                         background: "rgba(255,255,255,0.02)",
                       }}
                     >
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/provider/services/${s.id}`)}
+                        style={{ float: "right", border: "none", background: "transparent", color: "var(--gray-text)", cursor: "pointer" }}
+                      >
+                        Manage
+                      </button>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                         <strong>{s.title}</strong>
                         <span style={{ color: "var(--yellow)" }}>₹{s.price}</span>
@@ -217,6 +113,11 @@ export default function ProviderDashboardPage() {
                       <div style={{ fontSize: 12, marginTop: 8, color: "var(--gray-text)" }}>
                         ⏱ {s.duration_minutes} mins
                       </div>
+                      {s.location_address && (
+                        <div style={{ fontSize: 12, marginTop: 4, color: "var(--gray-text)" }}>
+                          📍 {s.location_address}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

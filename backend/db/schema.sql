@@ -60,6 +60,9 @@ CREATE TABLE _services (
     price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
     duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
     tags TEXT[] DEFAULT '{}',
+    location_address TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
     search_vector tsvector,
     is_deleted BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -69,6 +72,7 @@ CREATE TABLE _services (
 CREATE INDEX idx_services_provider_id ON _services (provider_id) WHERE is_deleted = false;
 CREATE INDEX idx_services_category_id ON _services (category_id) WHERE is_deleted = false;
 CREATE INDEX idx_services_search_vector ON _services USING GIN (search_vector) WHERE is_deleted = false;
+CREATE INDEX idx_services_lat_lng ON _services (latitude, longitude) WHERE is_deleted = false;
 
 -- Auto-update search vector
 CREATE OR REPLACE FUNCTION update_service_search_vector() RETURNS TRIGGER AS $$

@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { geocodeAddress } = require('../services/geocoding.service');
 
 const categorySlugExpr = `regexp_replace(lower(c.name), '[^a-z0-9]+', '', 'g')`;
 
@@ -11,14 +12,28 @@ const createService = async (req, res, next) => {
       return res.status(403).json({ error: 'Only providers can create services' });
     }
 
-    const { category_id, title, description, price, duration_minutes, tags } = req.body;
+    const { category_id, title, description, price, duration_minutes, tags, location_address } = req.body;
+    if (!location_address) {
+      return res.status(400).json({ error: 'location_address is required' });
+    }
+    let geo = null;
+    try {
+      geo = await geocodeAddress(location_address);
+    } catch (e) {
+      return res.status(400).json({ error: e.message || 'Could not resolve location coordinates' });
+    }
+    if (!geo || !Number.isFinite(geo.latitude) || !Number.isFinite(geo.longitude)) {
+      return res.status(400).json({ error: 'Could not resolve location coordinates' });
+    }
 
     // Notice we insert into `_services` because it's the base table
     const result = await pool.query(
-      `INSERT INTO _services (provider_id, category_id, title, description, price, duration_minutes, tags) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      `INSERT INTO _services (
+         provider_id, category_id, title, description, price, duration_minutes, tags, location_address, latitude, longitude
+       ) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
        RETURNING *`,
-      [req.user.id, category_id, title, description, price, duration_minutes, tags || '{}']
+      [req.user.id, category_id, title, description, price, duration_minutes, tags || '{}', geo.location_address, geo.latitude, geo.longitude]
     );
 
     res.status(201).json({ message: 'Service created', service: result.rows[0] });
@@ -35,9 +50,10 @@ const getServices = async (req, res, next) => {
     const { q, category_id, category } = req.query;
     let queryArgs = [];
     let queryStr = `SELECT s.id, s.provider_id, s.category_id, s.title, s.description, s.price, s.duration_minutes, s.tags,
+                           s.location_address, s.latitude, s.longitude,
                            c.name AS category_name
-                    FROM services s
-                    LEFT JOIN categories c ON c.id = s.category_id
+                    FROM _services s
+                    LEFT JOIN _categories c ON c.id = s.category_id
                     WHERE 1=1`;
 
     if (category_id) {
@@ -72,7 +88,7 @@ const getServices = async (req, res, next) => {
 const getServiceCategories = async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT id, name FROM categories ORDER BY name ASC`
+      `SELECT id, name FROM _categories ORDER BY name ASC`
     );
 
     const categories = result.rows.map((c) => ({
@@ -96,8 +112,8 @@ const getMyServices = async (req, res, next) => {
       return res.status(403).json({ error: 'Only providers can access their services' });
     }
     const result = await pool.query(
-      `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags 
-       FROM services WHERE provider_id = $1`,
+      `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags, location_address, latitude, longitude
+       FROM _services WHERE provider_id = $1`,
       [req.user.id]
     );
     res.status(200).json(result.rows);
@@ -113,8 +129,8 @@ const getServiceById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags 
-       FROM services WHERE id = $1`,
+      `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags, location_address, latitude, longitude
+       FROM _services WHERE id = $1`,
       [id]
     );
     if (result.rows.length === 0) {
@@ -139,18 +155,12 @@ const updateService = async (req, res, next) => {
       });
     }
 
-    // ❌ Prevent category change explicitly
-    if (req.body.category_id !== undefined) {
-      return res.status(400).json({
-        error: 'Category cannot be changed once service is created'
-      });
-    }
-
     const fields = [];
     const values = [];
     let idx = 1;
 
     const allowedFields = [
+      'category_id',
       'title',
       'description',
       'price',
@@ -174,13 +184,31 @@ const updateService = async (req, res, next) => {
     }
 
     // 🔥 Validation (important)
-    if (
-      req.body.duration_minutes &&
-      req.body.duration_minutes % 15 !== 0
-    ) {
+    if (req.body.duration_minutes && req.body.duration_minutes % 15 !== 0) {
       return res.status(400).json({
         error: 'Duration must be multiple of 15 minutes'
       });
+    }
+
+    if (req.body.location_address !== undefined) {
+      let geo = null;
+      try {
+        geo = await geocodeAddress(req.body.location_address);
+      } catch (e) {
+        return res.status(400).json({ error: e.message || 'Could not resolve location coordinates' });
+      }
+      if (!geo || !Number.isFinite(geo.latitude) || !Number.isFinite(geo.longitude)) {
+        return res.status(400).json({ error: 'Could not resolve location coordinates' });
+      }
+      fields.push(`location_address = $${idx}`);
+      values.push(geo.location_address);
+      idx++;
+      fields.push(`latitude = $${idx}`);
+      values.push(geo.latitude);
+      idx++;
+      fields.push(`longitude = $${idx}`);
+      values.push(geo.longitude);
+      idx++;
     }
 
     fields.push(`updated_at = NOW()`);
@@ -268,7 +296,7 @@ const getServicesByCategory = async (req, res, next) => {
 
     // ✅ 2. Check if category exists
     const categoryCheck = await pool.query(
-      `SELECT id FROM categories WHERE id = $1`,
+      `SELECT id FROM _categories WHERE id = $1`,
       [category_id]
     );
 
@@ -281,7 +309,7 @@ const getServicesByCategory = async (req, res, next) => {
     // 🚀 3. Fetch services
     const result = await pool.query(
       `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags
-       FROM services
+       FROM _services
        WHERE category_id = $1
        ORDER BY created_at DESC`,
       [category_id]

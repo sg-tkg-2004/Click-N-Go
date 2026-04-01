@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { pickForwardChainFromLockedRows } = require('../utils/bookingSlots');
 
 const BASE_SLOT = 15;
 
@@ -51,7 +52,7 @@ const createBooking = async (req, res, next) => {
 
     // ✅ 1. Validate service
     const serviceRes = await client.query(
-      `SELECT id, provider_id, duration_minutes FROM services WHERE id = $1`,
+      `SELECT id, provider_id, duration_minutes FROM _services WHERE id = $1`,
       [service_id]
     );
 
@@ -77,14 +78,18 @@ const createBooking = async (req, res, next) => {
 
     // ✅ 2. Fetch + LOCK slots
     // Match schema: _availabilities.is_booked + bookings row locks (incl. reschedule target + lock_expires_at)
+    const expectedWindowEnd = new Date(start.getTime() + duration * 60000);
+    // Window: only slot *starts* in [selected_start, selected_start + duration).
+    // Example: 8:30 PM + 30 min → rows starting 8:30 and 8:45 only; 7:45 PM is excluded (start < selected).
     const slotsRes = await client.query(
       `SELECT a.* FROM _availabilities a
        WHERE a.provider_id = $1
-       AND a.start_time >= $2
+       AND a.start_time >= $2::timestamptz
+       AND a.start_time < $3::timestamptz
        AND a.is_deleted = false
        AND a.is_booked = false
        AND NOT EXISTS (
-         SELECT 1 FROM bookings b
+         SELECT 1 FROM _bookings b
          WHERE b.is_deleted = false
            AND b.status IN ('PENDING', 'CONFIRMED', 'RESCHEDULE_REQUESTED', 'RESCHEDULED')
            AND (b.lock_expires_at IS NULL OR b.lock_expires_at > NOW())
@@ -92,55 +97,29 @@ const createBooking = async (req, res, next) => {
        )
        ORDER BY a.start_time ASC
        FOR UPDATE`,
-      [provider_id, start]
+      [provider_id, start, expectedWindowEnd]
     );
 
-    const slots = slotsRes.rows;
+    const startMs = start.getTime();
+    const windowEndMs = expectedWindowEnd.getTime();
+
+    // Defense in depth: never pass rows that start before the selected instant into chain logic
+    // (guards against any driver/query edge case; SQL already enforces start_time >= $2).
+    const slots = slotsRes.rows.filter((s) => {
+      const t = new Date(s.start_time).getTime();
+      return t >= startMs && t < windowEndMs;
+    });
 
     if (slots.length === 0) {
       throw new Error('No slots available');
     }
 
-    // 🔥 3. STRICT: find EXACT start_time index
-    const startIndex = slots.findIndex(
-      s => new Date(s.start_time).getTime() === start.getTime()
-    );
-
-    if (startIndex === -1) {
-      throw new Error('Selected time slot is not available');
-    }
-
-    // 🔥 4. Build slots ONLY from selected start_time
-    let selectedSlots = [];
-
-    for (let j = 0; j < slotsNeeded; j++) {
-      const current = slots[startIndex + j];
-      const prev = selectedSlots[j - 1];
-
-      if (!current) {
-        throw new Error('Not enough slots available');
-      }
-
-      // first slot
-      if (j === 0) {
-        selectedSlots.push(current);
-        continue;
-      }
-
-      // continuity check
-      if (
-        new Date(prev.end_time).getTime() ===
-        new Date(current.start_time).getTime()
-      ) {
-        selectedSlots.push(current);
-      } else {
-        throw new Error('Selected time is not fully available');
-      }
-    }
-
-    if (selectedSlots.length !== slotsNeeded) {
-      throw new Error('Not enough continuous slots available');
-    }
+    // Root-cause fix: do NOT use slots[0] as the chain anchor. Older code assumed the first
+    // row in the result was the selected slot; if any row before selected_start appeared in the
+    // array, the chain could incorrectly include 7:45 + 8:30 + 8:45 for a 30-min booking.
+    // pickForwardChainFromLockedRows finds the row whose start_time === selected_start, then
+    // takes exactly slotsNeeded consecutive rows forward (end_time === next.start_time).
+    const selectedSlots = pickForwardChainFromLockedRows(slots, start, slotsNeeded);
 
     // 🔥 5. Call DB function with first slot
     const firstSlotId = selectedSlots[0].id;
@@ -177,7 +156,7 @@ const createBooking = async (req, res, next) => {
   } catch (error) {
     await client.query('ROLLBACK');
 
-    console.error('🔥 Booking Error:', error.message);
+    console.error(' Booking Error:', error.message);
 
     res.status(400).json({
       error: error.message || 'Booking failed'
@@ -207,7 +186,7 @@ const requestReschedule = async (req, res, next) => {
 
     const bookingResult = await pool.query(
       `SELECT customer_id, provider_id, availability_id, status 
-       FROM bookings WHERE id = $1`,
+       FROM _bookings WHERE id = $1`,
       [booking_id]
     );
 
@@ -285,7 +264,7 @@ const approveReschedule = async (req, res, next) => {
 
     const bookingResult = await client.query(
       `SELECT provider_id, target_availability_id, status, lock_expires_at 
-       FROM bookings WHERE id = $1`,
+       FROM _bookings WHERE id = $1`,
       [booking_id]
     );
 
@@ -306,7 +285,7 @@ const approveReschedule = async (req, res, next) => {
       return res.status(400).json({ error: 'No pending reschedule request' });
     }
 
-    // 🔥 Expiry check
+    //  Expiry check
     if (booking.lock_expires_at && new Date(booking.lock_expires_at) < new Date()) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Reschedule request expired' });
@@ -359,7 +338,7 @@ const rejectReschedule = async (req, res, next) => {
 
     const bookingResult = await pool.query(
       `SELECT provider_id, status 
-       FROM bookings WHERE id = $1`,
+       FROM _bookings WHERE id = $1`,
       [booking_id]
     );
 
@@ -413,11 +392,11 @@ const getMyBookings = async (req, res, next) => {
               a.start_time, a.end_time,
               cu.id AS customer_id, cu.name AS customer_name,
               pu.id AS provider_id, pu.name AS provider_name
-       FROM bookings b
-       JOIN services s ON s.id = b.service_id
-       JOIN availabilities a ON a.id = b.availability_id
-       JOIN users cu ON cu.id = b.customer_id
-       JOIN users pu ON pu.id = b.provider_id
+       FROM _bookings b
+       JOIN _services s ON s.id = b.service_id
+       JOIN _availabilities a ON a.id = b.availability_id
+       JOIN _users cu ON cu.id = b.customer_id
+       JOIN _users pu ON pu.id = b.provider_id
        WHERE ${actorField} = $1
        ORDER BY b.created_at DESC`,
       [req.user.id]

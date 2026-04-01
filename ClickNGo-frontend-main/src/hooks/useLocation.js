@@ -2,16 +2,18 @@ import { useEffect } from "react";
 
 const FALLBACK = "Street 133, Times Square, NYC";
 
-export function useLocation(setLocation) {
+export function useLocation(setLocation, setCoords) {
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocation(FALLBACK);
+      setCoords?.(null);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
+        setCoords?.({ latitude, longitude });
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
         fetch(url, {
           headers: { Accept: "application/json", "User-Agent": "ClicknGo/1.0" },
@@ -34,7 +36,10 @@ export function useLocation(setLocation) {
           })
           .catch(() => setLocation(FALLBACK));
       },
-      () => setLocation(FALLBACK)
+      () => {
+        setLocation(FALLBACK);
+        setCoords?.(null);
+      }
     );
-  }, [setLocation]);
+  }, [setLocation, setCoords]);
 }

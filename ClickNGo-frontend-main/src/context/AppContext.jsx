@@ -12,8 +12,9 @@ export function AppProvider({ children }) {
   const [user, setUserState] = useState(null);
   const [authHydrated, setAuthHydrated] = useState(false);
   const [location, setLocation] = useState("Street 133, Times Square, NYC");
+  const [coords, setCoords] = useState(null);
 
-  useLocation(setLocation);
+  useLocation(setLocation, setCoords);
 
   // Load user from localStorage on mount
   useEffect(() => {
@@ -108,6 +109,7 @@ export function AppProvider({ children }) {
     logoutFn,
     location,
     setLocation,
+    coords,
     showToast: show,
     toastMsg,
   };

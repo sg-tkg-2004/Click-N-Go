@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import StarRating from "../components/common/StarRating";
 import ReviewCard from "../components/common/ReviewCard";
-import { CATEGORIES, REVIEWS } from "../data/appData";
+import { CATEGORIES } from "../data/appData";
 import { useAppContext } from "../context/AppContext";
 import { fetchWithAuth } from "../utils/api";
 import { normalizeLocalDateKey, todayLocalDateKey } from "../utils/dateKeys";
+import { buildForwardSlotStarts } from "../utils/slotWindows";
 
 const BASE_SLOT_MIN = 15;
 
@@ -13,42 +14,18 @@ function formatTimeLabel(iso) {
   return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-function consecutiveChain(chain) {
-  for (let j = 1; j < chain.length; j++) {
-    const prevEnd = new Date(chain[j - 1].end_time).getTime();
-    const curStart = new Date(chain[j].start_time).getTime();
-    if (prevEnd !== curStart) return false;
-  }
-  return true;
-}
-
 function buildBookableSlotStarts(sortedRows, durationMinutes) {
-  const slotsNeeded = durationMinutes / BASE_SLOT_MIN;
-  if (!Number.isInteger(slotsNeeded) || slotsNeeded < 1) return [];
-
-  const out = [];
-  for (let i = 0; i <= sortedRows.length - slotsNeeded; i++) {
-    const chain = sortedRows.slice(i, i + slotsNeeded);
-    if (!consecutiveChain(chain)) continue;
-    const first = chain[0];
-    const anyBooked = chain.some((r) => Boolean(r.is_booked));
-    const startMs = new Date(first.start_time).getTime();
-    const nowMs = Date.now();
-    out.push({
-      availability_id: first.id,
-      start_time: first.start_time,
-      timeLabel: formatTimeLabel(first.start_time),
-      disabled: anyBooked || startMs < nowMs,
-      reason: anyBooked ? "booked" : startMs < nowMs ? "past" : null,
-    });
-  }
-  return out;
+  return buildForwardSlotStarts(sortedRows, durationMinutes).map((slot) => ({
+    ...slot,
+    timeLabel: formatTimeLabel(slot.start_time),
+    reason: slot.disabled ? "unavailable" : null,
+  }));
 }
 
 export default function DetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { showToast } = useAppContext();
+  const { showToast, user } = useAppContext();
 
   const [service, setService] = useState(null);
   const [rawAvail, setRawAvail] = useState([]);
@@ -58,6 +35,7 @@ export default function DetailPage() {
   const [selectedDate, setSelectedDate] = useState(() => todayLocalDateKey());
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [reviews, setReviews] = useState([]);
 
   const availRequestIdRef = useRef(0);
 
@@ -99,7 +77,21 @@ export default function DetailPage() {
     if (service?.provider_id) fetchAvailability();
   }, [service?.provider_id, fetchAvailability]);
 
+  useEffect(() => {
+    async function loadReviews() {
+      if (!service?.id) return;
+      try {
+        const { data } = await fetchWithAuth(`/reviews/service/${service.id}`);
+        setReviews(Array.isArray(data) ? data : []);
+      } catch {
+        setReviews([]);
+      }
+    }
+    loadReviews();
+  }, [service?.id]);
+
   const durationMinutes = service?.duration_minutes || 30;
+  const isProvider = user?.role === "PROVIDER";
 
   /** Strictly slots whose start falls on the selected local calendar day (YYYY-MM-DD from date input). */
   const slotsForDay = useMemo(() => {
@@ -215,7 +207,10 @@ export default function DetailPage() {
                 <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 26, fontWeight: 700, marginBottom: 6 }}>
                   {service.title}
                 </div>
-                <StarRating rating={4.5} count={12} />
+                <StarRating
+                  rating={reviews.length ? Number((reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviews.length).toFixed(1)) : 0}
+                  count={reviews.length}
+                />
                 <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, color: "var(--gray-mid)" }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -266,14 +261,29 @@ export default function DetailPage() {
               <button
                 className="btn btn-glass"
                 style={{ fontSize: 12, padding: "6px 14px" }}
-                onClick={() => navigate("/reviews")}
+                onClick={() => navigate(`/reviews?serviceId=${service.id}`)}
               >
                 View All
               </button>
             </div>
-            {REVIEWS.slice(0, 2).map((r, i) => (
-              <ReviewCard key={i} r={r} i={i} compact />
-            ))}
+            {!reviews.length ? (
+              <div style={{ fontSize: 13, color: "var(--gray-text)" }}>No reviews yet.</div>
+            ) : (
+              reviews.slice(0, 2).map((r, i) => (
+                <ReviewCard
+                  key={r.id}
+                  i={i}
+                  compact
+                  r={{
+                    avatar: (r.reviewer_name || "U")[0],
+                    name: r.reviewer_name || "User",
+                    rating: r.rating,
+                    date: new Date(r.created_at).toLocaleDateString(),
+                    text: r.comment || "",
+                  }}
+                />
+              ))
+            )}
           </div>
         </div>
 
@@ -315,7 +325,11 @@ export default function DetailPage() {
           </div>
 
           <div style={{ padding: "0 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-            {availLoading ? (
+            {isProvider ? (
+              <div style={{ fontSize: 13, color: "var(--gray-text)", padding: "12px 0" }}>
+                Providers cannot book services. Use Manage Services to update this listing.
+              </div>
+            ) : availLoading ? (
               <div style={{ fontSize: 13, color: "var(--gray-text)", padding: "12px 0" }}>Loading slots…</div>
             ) : slotsForDay.length === 0 ? (
               <div style={{ fontSize: 13, color: "var(--gray-text)", padding: "12px 0" }}>
@@ -377,13 +391,19 @@ export default function DetailPage() {
                 borderRadius: 12,
                 padding: 14,
                 fontSize: 14,
-                opacity: selectedSlot && !selectedSlot.disabled && !bookingLoading ? 1 : 0.4,
-                cursor: selectedSlot && !selectedSlot.disabled && !bookingLoading ? "pointer" : "not-allowed",
+                opacity: isProvider || (selectedSlot && !selectedSlot.disabled && !bookingLoading) ? 1 : 0.4,
+                cursor: isProvider || (selectedSlot && !selectedSlot.disabled && !bookingLoading) ? "pointer" : "not-allowed",
               }}
-              disabled={!selectedSlot || selectedSlot.disabled || bookingLoading || availLoading}
-              onClick={handleConfirmBooking}
+              disabled={(!isProvider && (!selectedSlot || selectedSlot.disabled || bookingLoading || availLoading))}
+              onClick={() => {
+                if (isProvider) {
+                  navigate("/provider/dashboard");
+                  return;
+                }
+                handleConfirmBooking();
+              }}
             >
-              {bookingLoading ? "Securing slot…" : selectedSlot ? "Confirm booking" : "Select a time"}
+              {isProvider ? "Manage Services" : bookingLoading ? "Securing slot…" : selectedSlot ? "Book Now" : "Select a time"}
             </button>
           </div>
         </div>

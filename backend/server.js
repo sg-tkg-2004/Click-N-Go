@@ -19,6 +19,8 @@ app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/services', require('./routes/services.routes'));
 app.use('/api/availabilities', require('./routes/availabilities.routes'));
 app.use('/api/bookings', require('./routes/bookings.routes'));
+app.use('/api/reviews', require('./routes/reviews.routes'));
+app.use('/api/dashboard', require('./routes/dashboard.routes'));
 
 
 

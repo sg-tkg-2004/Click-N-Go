@@ -4,13 +4,14 @@ import ProviderRow from "../components/common/ProviderRow";
 import { CATEGORIES } from "../data/appData";
 import { fetchWithAuth } from "../utils/api";
 import { useAppContext } from "../context/AppContext";
+import { haversineKm, formatDistance } from "../utils/distance";
 
 const slugify = (val) => String(val || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { showToast } = useAppContext();
+  const { showToast, coords } = useAppContext();
   const query = searchParams.get("q") || "";
 
   const [results, setResults] = useState([]);
@@ -36,7 +37,12 @@ export default function SearchPage() {
             icon: cat ? cat.icon : "/images/GR.png",
             rating: 4.5, // placeholder until we join reviews
             reviews: 10,
-            dist: "Nearby",
+            dist: formatDistance(
+              haversineKm(coords, {
+                latitude: s.latitude,
+                longitude: s.longitude,
+              })
+            ) || s.location_address || "Location unavailable",
             time: `${s.duration_minutes} mins`
           };
         });
@@ -48,7 +54,7 @@ export default function SearchPage() {
       }
     }
     doSearch();
-  }, [query, showToast]);
+  }, [query, showToast, coords]);
 
   return (
     <div className="page" style={{ background: "var(--black)" }}>

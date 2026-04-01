@@ -42,7 +42,7 @@ export default function ProviderLandingPage() {
             Join 3,000+ local businesses already using ClicknGo to manage bookings, reach new customers, and grow
             revenue.
           </p>
-          <button className="btn btn-yellow" style={{ fontSize: 16, padding: "15px 36px" }} onClick={() => navigate("/provider/register")}>
+          <button className="btn btn-yellow" style={{ fontSize: 16, padding: "15px 36px" }} onClick={() => navigate("/provider/service/create")}>
             Get Started
           </button>
         </div>

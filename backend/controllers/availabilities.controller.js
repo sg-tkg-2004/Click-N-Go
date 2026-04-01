@@ -44,7 +44,7 @@ const createAvailability = async (req, res, next) => {
       });
     }
 
-    // 🔥 Extract TIME only (important)
+    //  Extract TIME only (important)
     const startHours = start.getHours();
     const startMinutes = start.getMinutes();
 
@@ -53,7 +53,7 @@ const createAvailability = async (req, res, next) => {
 
     const allSlots = [];
 
-    // 🔥 Loop for 2 months (day by day)
+    //  Loop for 2 months (day by day)
     let currentDate = new Date(start);
 
     while (currentDate <= maxDate) {
@@ -72,7 +72,7 @@ const createAvailability = async (req, res, next) => {
 
       let current = new Date(dayStart);
 
-      // 🔥 Generate slots for that day
+      //  Generate slots for that day
       while (true) {
         const slotEnd = new Date(current.getTime() + BASE_SLOT * 60000);
 
@@ -98,9 +98,9 @@ const createAvailability = async (req, res, next) => {
       });
     }
 
-    console.log(`🔥 Total slots generated: ${allSlots.length}`);
+    console.log(` Total slots generated: ${allSlots.length}`);
 
-    // 🔥 Bulk insert
+    //  Bulk insert
     const values = [];
     const params = [];
     let idx = 1;
@@ -133,7 +133,7 @@ const createAvailability = async (req, res, next) => {
       });
     }
 
-    console.error('🔥 Availability Error:', error.message);
+    console.error(' Availability Error:', error.message);
     next(error);
   }
 };
@@ -151,13 +151,13 @@ const getProviderAvailabilities = async (req, res, next) => {
     const result = await pool.query(
       `SELECT a.id, a.start_time, a.end_time,
               (a.is_booked OR EXISTS (
-                SELECT 1 FROM bookings b
+                SELECT 1 FROM _bookings b
                 WHERE b.availability_id = a.id
                   AND b.is_deleted = false
                   AND b.status IN ('PENDING', 'CONFIRMED', 'RESCHEDULE_REQUESTED', 'RESCHEDULED')
                   AND (b.lock_expires_at IS NULL OR b.lock_expires_at > NOW())
               )) AS is_booked
-       FROM availabilities a
+       FROM _availabilities a
        WHERE a.provider_id = $1
        AND a.is_deleted = false
        AND a.start_time > NOW()

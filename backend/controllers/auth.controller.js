@@ -131,8 +131,60 @@ const getMe = async (req, res, next) => {
   }
 };
 
+// @desc    Update current logged in user profile
+// @route   PATCH /api/auth/me
+// @access  Private
+const updateMe = async (req, res, next) => {
+  try {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    const allowed = ['name', 'phone'];
+
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        const v = String(req.body[key]).trim();
+        if (key === 'name' && v.length < 2) {
+          return res.status(400).json({ error: 'Name must be at least 2 characters' });
+        }
+        if (key === 'phone' && v.length > 0 && v.length < 8) {
+          return res.status(400).json({ error: 'Phone number looks too short' });
+        }
+        fields.push(`${key} = $${idx}`);
+        values.push(v || null);
+        idx++;
+      }
+    }
+
+    if (!fields.length) {
+      return res.status(400).json({ error: 'No valid fields provided' });
+    }
+
+    fields.push(`updated_at = NOW()`);
+    values.push(req.user.id);
+
+    const result = await pool.query(
+      `UPDATE _users
+       SET ${fields.join(', ')}
+       WHERE id = $${idx}
+       AND is_deleted = false
+       RETURNING id, name, email, role, phone`,
+      values
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.status(200).json({ message: 'Profile updated', user: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
-  getMe
+  getMe,
+  updateMe
 };

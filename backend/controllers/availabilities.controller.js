@@ -111,10 +111,10 @@ const createAvailability = async (req, res, next) => {
       idx += 4;
     });
 
+    // No ON CONFLICT: exclusion constraint (overlapping ranges) raises 23P01; caught below
     const query = `
       INSERT INTO _availabilities (provider_id, start_time, end_time, is_deleted)
       VALUES ${values.join(',')}
-      ON CONFLICT DO NOTHING
       RETURNING id
     `;
 
@@ -147,13 +147,21 @@ const getProviderAvailabilities = async (req, res, next) => {
   try {
     const { provider_id } = req.params;
 
+    // is_booked column is authoritative for multi-slot consumption; OR EXISTS covers legacy rows
     const result = await pool.query(
-      `SELECT id, start_time, end_time 
-       FROM _availabilities 
-       WHERE provider_id = $1 
-       AND is_deleted = false
-       AND start_time > NOW()
-       ORDER BY start_time ASC`,
+      `SELECT a.id, a.start_time, a.end_time,
+              (a.is_booked OR EXISTS (
+                SELECT 1 FROM bookings b
+                WHERE b.availability_id = a.id
+                  AND b.is_deleted = false
+                  AND b.status IN ('PENDING', 'CONFIRMED', 'RESCHEDULE_REQUESTED', 'RESCHEDULED')
+                  AND (b.lock_expires_at IS NULL OR b.lock_expires_at > NOW())
+              )) AS is_booked
+       FROM availabilities a
+       WHERE a.provider_id = $1
+       AND a.is_deleted = false
+       AND a.start_time > NOW()
+       ORDER BY a.start_time ASC`,
       [provider_id]
     );
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { useToast } from "../hooks/useToast";
 import { useLocation } from "../hooks/useLocation";
+import { API_BASE_URL, fetchWithAuth } from "../utils/api";
 
 const STORAGE_KEY = "clickngo_user";
 
@@ -9,6 +10,7 @@ const AppContext = createContext(null);
 export function AppProvider({ children }) {
   const { msg: toastMsg, show } = useToast();
   const [user, setUserState] = useState(null);
+  const [authHydrated, setAuthHydrated] = useState(false);
   const [location, setLocation] = useState("Street 133, Times Square, NYC");
 
   useLocation(setLocation);
@@ -46,29 +48,22 @@ export function AppProvider({ children }) {
   };
 
   const loginFn = async (email, password) => {
-    try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Login failed");
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Login failed");
 
-      // Decode token gently
-      const payload = JSON.parse(atob(data.token.split('.')[1]));
-      const userData = { id: payload.id, role: payload.role, email };
-
-      localStorage.setItem('token', data.token);
-      setUser(userData);
-      return userData;
-    } catch (err) {
-      throw err;
-    }
+    localStorage.setItem('token', data.token);
+    const userData = data.user || null;
+    setUser(userData);
+    return userData;
   };
 
   const registerFn = async (name, email, password, role, phone) => {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, role, phone })
@@ -78,11 +73,39 @@ export function AppProvider({ children }) {
       return data.user;
   };
 
+  const loadCurrentUser = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    const { data } = await fetchWithAuth('/auth/me');
+    setUser(data.user);
+    return data.user;
+  };
+
+  // Resolve JWT session before role-based UI (avoids flicker)
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setAuthHydrated(true);
+      return;
+    }
+    loadCurrentUser()
+      .catch(() => {})
+      .finally(() => setAuthHydrated(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const logoutFn = () => {
+    setUser(null);
+  };
+
   const value = {
     user,
+    authHydrated,
     setUser,
     loginFn,
     registerFn,
+    loadCurrentUser,
+    logoutFn,
     location,
     setLocation,
     showToast: show,

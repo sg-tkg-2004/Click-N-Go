@@ -4,7 +4,7 @@ import { useAppContext } from "../../context/AppContext";
 import { CATEGORIES } from "../../data/appData";
 
 export default function Nav() {
-  const { user, location } = useAppContext();
+  const { user, location, logoutFn, showToast, authHydrated } = useAppContext();
   const navigate = useNavigate();
   const pathname = useRouteLocation().pathname;
   const [searchQ, setSearchQ] = useState("");
@@ -65,17 +65,33 @@ export default function Nav() {
                   </Link>
               ))}
           </div>
-          <div className="nav-right">
-              {user ? (
-                  <div className="nav-user" onClick={() => navigate("/profile")}>
-                      <div className="nav-avatar">{user.name[0]}</div>
-                      <span style={{fontSize: 13, fontWeight: 500}}>{user.name.split(" ")[0]}</span>
-                  </div>
-              ) : (
+          <div className="nav-right" style={{ minHeight: 40, display: "flex", alignItems: "center", gap: 8 }}>
+              {!authHydrated ? (
+                  <span style={{ fontSize: 12, color: "var(--gray-text)", padding: "0 8px" }}>…</span>
+              ) : user ? (
                   <>
+                    {user.role === "PROVIDER" && (
                       <button className="nav-btn" onClick={() => navigate("/provider")}>
                           List Business
                       </button>
+                    )}
+                    <div className="nav-user" onClick={() => navigate("/profile")}>
+                        <div className="nav-avatar">{(user.name || "U")[0]}</div>
+                        <span style={{fontSize: 13, fontWeight: 500}}>{(user.name || "User").split(" ")[0]}</span>
+                    </div>
+                    <button
+                      className="nav-btn"
+                      onClick={() => {
+                        logoutFn();
+                        showToast("Logged out successfully");
+                        navigate("/login");
+                      }}
+                    >
+                      Logout
+                    </button>
+                  </>
+              ) : (
+                  <>
                       <button className="nav-btn" onClick={() => navigate("/login")}>
                           Login
                       </button>

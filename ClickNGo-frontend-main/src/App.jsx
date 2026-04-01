@@ -18,6 +18,8 @@ import NotFoundPage from "./pages/NotFoundPage";
 import ProviderLandingPage from "./pages/provider/ProviderLandingPage";
 import ProviderRegisterPage from "./pages/provider/ProviderRegisterPage";
 import ProviderDashboardPage from "./pages/provider/ProviderDashboardPage";
+import CreateAvailabilityPage from "./pages/provider/CreateAvailabilityPage";
+import { ProviderRoute, CustomerBookingRoute } from "./components/auth/ProtectedRoute";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -42,7 +44,14 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/category/:catId" element={<CategoryPage />} />
-        <Route path="/detail/:id" element={<DetailPage />} />
+        <Route
+          path="/detail/:id"
+          element={
+            <CustomerBookingRoute>
+              <DetailPage />
+            </CustomerBookingRoute>
+          }
+        />
         <Route path="/confirm" element={<ConfirmPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -51,7 +60,22 @@ function AppContent() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/provider" element={<ProviderLandingPage />} />
         <Route path="/provider/register" element={<ProviderRegisterPage />} />
-        <Route path="/provider/dashboard" element={<ProviderDashboardPage />} />
+        <Route
+          path="/provider/dashboard"
+          element={
+            <ProviderRoute>
+              <ProviderDashboardPage />
+            </ProviderRoute>
+          }
+        />
+        <Route
+          path="/provider/availability"
+          element={
+            <ProviderRoute>
+              <CreateAvailabilityPage />
+            </ProviderRoute>
+          }
+        />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <Toast />

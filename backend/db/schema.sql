@@ -89,6 +89,8 @@ CREATE TABLE _availabilities (
     provider_id UUID NOT NULL REFERENCES _users(id) ON DELETE RESTRICT,
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
+    -- Set true when this slot is consumed by a booking (multi-slot services mark every 15m row)
+    is_booked BOOLEAN NOT NULL DEFAULT false,
     is_deleted BOOLEAN NOT NULL DEFAULT false,
     CONSTRAINT chk_time_order CHECK (start_time < end_time),
     -- EXCLUDE constraint to prevent ANY overlap of time slots for the same provider

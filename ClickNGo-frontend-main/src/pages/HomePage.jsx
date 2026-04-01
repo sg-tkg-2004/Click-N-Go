@@ -2,9 +2,11 @@ import { useNavigate } from "react-router-dom";
 import ReviewCard from "../components/common/ReviewCard";
 import Footer from "../components/layout/Footer";
 import { CATEGORIES, REVIEWS } from "../data/appData";
+import { useAppContext } from "../context/AppContext";
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { user, authHydrated } = useAppContext();
 
   return (
     <div className="page" style={{ background: "var(--black)" }}>
@@ -162,9 +164,11 @@ export default function HomePage() {
               </svg>
               Book Now
             </button>
-            <button className="btn btn-glass" onClick={() => navigate("/provider")}>
-              List Your Business
-            </button>
+            {authHydrated && user?.role === "PROVIDER" && (
+              <button className="btn btn-glass" onClick={() => navigate("/provider")}>
+                List Your Business
+              </button>
+            )}
           </div>
         </div>
 
@@ -486,7 +490,7 @@ export default function HomePage() {
           <button
             className="btn btn-yellow"
             style={{ fontSize: 16, padding: "15px 36px" }}
-            onClick={() => navigate("/signup")}
+            onClick={() => navigate("/category/grooming")}
           >
             Get Started
           </button>

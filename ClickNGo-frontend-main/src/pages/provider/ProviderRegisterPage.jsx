@@ -8,7 +8,15 @@ export default function ProviderRegisterPage() {
   const { showToast } = useAppContext();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: "", category: "", address: "", phone: "", desc: "" });
+  const [form, setForm] = useState({
+    name: "",
+    category: "",
+    address: "",
+    phone: "",
+    desc: "",
+    servicesOffered: "",
+    serviceTimeMinutes: "",
+  });
   function set(k) {
     return (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   }
@@ -151,6 +159,13 @@ export default function ProviderRegisterPage() {
                   ["Category", form.category || "—"],
                   ["Address", form.address || "—"],
                   ["Phone", form.phone || "—"],
+                  ["Service time (min)", form.serviceTimeMinutes || "—"],
+                  [
+                    "Tags",
+                    form.servicesOffered
+                      ? form.servicesOffered.split(",").map((t) => t.trim()).filter(Boolean).join(", ") || "—"
+                      : "—",
+                  ],
                 ].map(([k, v]) => (
                   <div
                     key={k}

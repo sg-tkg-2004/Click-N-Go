@@ -1,5 +1,7 @@
 const pool = require('../config/db');
 
+const categorySlugExpr = `regexp_replace(lower(c.name), '[^a-z0-9]+', '', 'g')`;
+
 // @desc    Create a new service
 // @route   POST /api/services
 // @access  Private (Provider only)
@@ -30,25 +32,56 @@ const createService = async (req, res, next) => {
 // @access  Public
 const getServices = async (req, res, next) => {
   try {
-    const { q, category_id } = req.query;
+    const { q, category_id, category } = req.query;
     let queryArgs = [];
-    let queryStr = `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags 
-                    FROM services WHERE 1=1`; // 'services' is the safe VIEW (is_deleted = false)
+    let queryStr = `SELECT s.id, s.provider_id, s.category_id, s.title, s.description, s.price, s.duration_minutes, s.tags,
+                           c.name AS category_name
+                    FROM services s
+                    LEFT JOIN categories c ON c.id = s.category_id
+                    WHERE 1=1`;
 
     if (category_id) {
       queryArgs.push(category_id);
-      queryStr += ` AND category_id = $${queryArgs.length}`;
+      queryStr += ` AND s.category_id = $${queryArgs.length}`;
+    }
+
+    if (category) {
+      queryArgs.push(String(category).toLowerCase().replace(/[^a-z0-9]/g, ''));
+      queryStr += ` AND ${categorySlugExpr} = $${queryArgs.length}`;
     }
 
     // Full Text Search!
     if (q) {
       queryArgs.push(q);
       const paramIndex = queryArgs.length;
-      queryStr += ` AND search_vector @@ plainto_tsquery('english', $${paramIndex})`;
+      queryStr += ` AND s.search_vector @@ plainto_tsquery('english', $${paramIndex})`;
     }
+
+    queryStr += ` ORDER BY s.created_at DESC`;
 
     const result = await pool.query(queryStr, queryArgs);
     res.status(200).json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get categories used for services
+// @route   GET /api/services/categories
+// @access  Public
+const getServiceCategories = async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name FROM categories ORDER BY name ASC`
+    );
+
+    const categories = result.rows.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: String(c.name).toLowerCase().replace(/[^a-z0-9]/g, '')
+    }));
+
+    res.status(200).json(categories);
   } catch (error) {
     next(error);
   }
@@ -222,4 +255,56 @@ const deleteService = async (req, res, next) => {
   }
 };
 
-module.exports = { createService, getServices, getMyServices, getServiceById,updateService, deleteService};
+const getServicesByCategory = async (req, res, next) => {
+  try {
+    const { category_id } = req.params;
+
+    // ✅ 1. Validate input
+    if (!category_id) {
+      return res.status(400).json({
+        error: 'category_id is required'
+      });
+    }
+
+    // ✅ 2. Check if category exists
+    const categoryCheck = await pool.query(
+      `SELECT id FROM categories WHERE id = $1`,
+      [category_id]
+    );
+
+    if (categoryCheck.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Category not found'
+      });
+    }
+
+    // 🚀 3. Fetch services
+    const result = await pool.query(
+      `SELECT id, provider_id, category_id, title, description, price, duration_minutes, tags
+       FROM services
+       WHERE category_id = $1
+       ORDER BY created_at DESC`,
+      [category_id]
+    );
+
+    res.status(200).json({
+      message: 'Services fetched successfully',
+      count: result.rows.length,
+      services: result.rows
+    });
+
+  } catch (error) {
+    console.error('🔥 Get Services By Category Error:', error.message);
+    next(error);
+  }
+};
+
+module.exports = {
+  createService,
+  getServices,
+  getMyServices,
+  getServiceById,
+  updateService,
+  deleteService,
+  getServiceCategories
+};

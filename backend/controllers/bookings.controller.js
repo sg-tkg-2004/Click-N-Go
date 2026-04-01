@@ -11,15 +11,28 @@ const createBooking = async (req, res, next) => {
       return res.status(403).json({ error: 'Only customers can book services' });
     }
 
-    const { provider_id, service_id, start_time } = req.body;
+    const { provider_id, service_id, start_time, availability_id } = req.body;
 
-    if (!provider_id || !service_id || !start_time) {
+    if (!provider_id || !service_id || (!start_time && !availability_id)) {
       return res.status(400).json({
-        error: 'provider_id, service_id, start_time are required'
+        error: 'provider_id, service_id and either start_time or availability_id are required'
       });
     }
 
-    const start = new Date(start_time);
+    let resolvedStartTime = start_time;
+
+    if (!resolvedStartTime && availability_id) {
+      const availabilityRes = await client.query(
+        `SELECT start_time FROM _availabilities WHERE id = $1 AND is_deleted = false`,
+        [availability_id]
+      );
+      if (availabilityRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Selected availability not found' });
+      }
+      resolvedStartTime = availabilityRes.rows[0].start_time;
+    }
+
+    const start = new Date(resolvedStartTime);
 
     if (isNaN(start)) {
       return res.status(400).json({ error: 'Invalid date format' });
@@ -63,13 +76,21 @@ const createBooking = async (req, res, next) => {
     await client.query('BEGIN');
 
     // ✅ 2. Fetch + LOCK slots
+    // Match schema: _availabilities.is_booked + bookings row locks (incl. reschedule target + lock_expires_at)
     const slotsRes = await client.query(
-      `SELECT * FROM _availabilities
-       WHERE provider_id = $1
-       AND start_time >= $2
-       AND is_deleted = false
-       AND is_booked = false
-       ORDER BY start_time ASC
+      `SELECT a.* FROM _availabilities a
+       WHERE a.provider_id = $1
+       AND a.start_time >= $2
+       AND a.is_deleted = false
+       AND a.is_booked = false
+       AND NOT EXISTS (
+         SELECT 1 FROM bookings b
+         WHERE b.is_deleted = false
+           AND b.status IN ('PENDING', 'CONFIRMED', 'RESCHEDULE_REQUESTED', 'RESCHEDULED')
+           AND (b.lock_expires_at IS NULL OR b.lock_expires_at > NOW())
+           AND (b.availability_id = a.id OR b.target_availability_id = a.id)
+       )
+       ORDER BY a.start_time ASC
        FOR UPDATE`,
       [provider_id, start]
     );
@@ -378,5 +399,35 @@ const rejectReschedule = async (req, res, next) => {
   }
 };
 
+// @desc    Get booking history for current user
+// @route   GET /api/bookings/my
+// @access  Private
+const getMyBookings = async (req, res, next) => {
+  try {
+    const isProvider = req.user.role === 'PROVIDER';
+    const actorField = isProvider ? 'b.provider_id' : 'b.customer_id';
 
-module.exports = {createBooking,requestReschedule,approveReschedule,rejectReschedule};
+    const result = await pool.query(
+      `SELECT b.id, b.status, b.created_at,
+              s.id AS service_id, s.title AS service_title, s.price, s.duration_minutes,
+              a.start_time, a.end_time,
+              cu.id AS customer_id, cu.name AS customer_name,
+              pu.id AS provider_id, pu.name AS provider_name
+       FROM bookings b
+       JOIN services s ON s.id = b.service_id
+       JOIN availabilities a ON a.id = b.availability_id
+       JOIN users cu ON cu.id = b.customer_id
+       JOIN users pu ON pu.id = b.provider_id
+       WHERE ${actorField} = $1
+       ORDER BY b.created_at DESC`,
+      [req.user.id]
+    );
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+module.exports = { createBooking, requestReschedule, approveReschedule, rejectReschedule, getMyBookings };

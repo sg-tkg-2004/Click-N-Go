@@ -5,6 +5,8 @@ import { CATEGORIES } from "../data/appData";
 import { fetchWithAuth } from "../utils/api";
 import { useAppContext } from "../context/AppContext";
 
+const slugify = (val) => String(val || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -21,7 +23,8 @@ export default function SearchPage() {
         const { data } = await fetchWithAuth(`/services?q=${encodeURIComponent(query)}`);
         // Map backend service row to what ProviderRow expects
         const mapped = data.map(s => {
-          const cat = CATEGORIES.find(c => c.id === s.category_id);
+          const backendCatSlug = s.category_name ? slugify(s.category_name) : slugify(s.category_id);
+          const cat = CATEGORIES.find(c => slugify(c.id) === backendCatSlug);
           return {
             id: s.id, // we will route to /detail/:service_id later
             provider_id: s.provider_id,

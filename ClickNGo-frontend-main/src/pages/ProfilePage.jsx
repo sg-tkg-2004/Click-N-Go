@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
-import { RECENT_BOOKINGS } from "../data/appData";
+import { fetchWithAuth } from "../utils/api";
 
 const DEFAULT_USER = {
   name: "Sarah Anderson",
@@ -12,9 +12,11 @@ const DEFAULT_USER = {
 };
 
 export default function ProfilePage() {
-  const { user, setUser } = useAppContext();
+  const { user, setUser, logoutFn, showToast } = useAppContext();
   const navigate = useNavigate();
   const u = user || DEFAULT_USER;
+  const [bookings, setBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState("bookings");
   const [editing, setEditing] = useState(false);
@@ -29,6 +31,22 @@ export default function ProfilePage() {
     const curr = user || DEFAULT_USER;
     setEditForm({ name: curr.name, email: curr.email, phone: curr.phone, address: curr.address });
   }, [user]);
+
+  useEffect(() => {
+    async function loadBookings() {
+      if (!user) return;
+      setBookingsLoading(true);
+      try {
+        const { data } = await fetchWithAuth("/bookings/my");
+        setBookings(data || []);
+      } catch (error) {
+        showToast("Could not fetch bookings");
+      } finally {
+        setBookingsLoading(false);
+      }
+    }
+    loadBookings();
+  }, [user, showToast]);
 
   function startEdit() {
     setEditForm({
@@ -102,6 +120,18 @@ export default function ProfilePage() {
           >
             Edit Profile
           </button>
+          {user && (
+            <button
+              className="btn btn-glass"
+              style={{ fontSize: 13, padding: "9px 20px", flexShrink: 0 }}
+              onClick={() => {
+                logoutFn();
+                navigate("/login");
+              }}
+            >
+              Logout
+            </button>
+          )}
         </div>
 
         {/* Edit Profile - large full-width form */}
@@ -251,15 +281,19 @@ export default function ProfilePage() {
               <div style={{ fontWeight: 700 }}>Recent Bookings</div>
               <span style={{ fontSize: 12, color: "var(--gray-text)" }}>View all</span>
             </div>
-            {RECENT_BOOKINGS.map((b, i) => (
+            {bookingsLoading ? (
+              <div style={{ padding: 24, fontSize: 13, color: "var(--gray-text)" }}>Loading bookings...</div>
+            ) : bookings.length === 0 ? (
+              <div style={{ padding: 24, fontSize: 13, color: "var(--gray-text)" }}>No bookings found yet.</div>
+            ) : bookings.map((b, i) => (
               <div
-                key={i}
+                key={b.id}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 16,
                   padding: "16px 24px",
-                  borderBottom: i < RECENT_BOOKINGS.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                  borderBottom: i < bookings.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                   transition: "background .2s",
                   cursor: "pointer",
                 }}
@@ -282,16 +316,16 @@ export default function ProfilePage() {
                   {b.icon}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{b.service}</div>
-                  <div style={{ fontSize: 12, color: "var(--gray-text)" }}>{b.provider}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{b.service_title}</div>
+                  <div style={{ fontSize: 12, color: "var(--gray-text)" }}>{b.provider_name}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 12, color: "var(--gray-mid)" }}>{b.date}</div>
+                  <div style={{ fontSize: 12, color: "var(--gray-mid)" }}>{new Date(b.start_time).toLocaleString()}</div>
                   <span
-                    className={`badge ${b.status === "completed" ? "badge-green" : "badge-red"}`}
+                    className={`badge ${String(b.status).toLowerCase().includes("completed") ? "badge-green" : "badge-red"}`}
                     style={{ marginTop: 4 }}
                   >
-                    {b.status}
+                    {String(b.status).toLowerCase()}
                   </span>
                 </div>
               </div>

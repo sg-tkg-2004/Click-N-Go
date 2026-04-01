@@ -1,9 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth.middleware');
-const { createService, getServices, getMyServices, getServiceById,updateService, deleteService } = require('../controllers/services.controller');
+const {
+  createService,
+  getServices,
+  getMyServices,
+  getServiceById,
+  updateService,
+  deleteService,
+  getServiceCategories
+} = require('../controllers/services.controller');
 
 router.post('/', verifyToken, createService);
+router.get('/categories', getServiceCategories);
 router.get('/my', verifyToken, getMyServices); // MUST be before /:id
 router.get('/:id', getServiceById);
 router.get('/', getServices);

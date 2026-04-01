@@ -71,7 +71,7 @@ const loginUser = async (req, res, next) => {
 
     // 1. Check if user exists (we query the 'users' view so we NEVER fetch soft-deleted users!)
     const result = await pool.query(
-      `SELECT id, password_hash, role FROM users WHERE email = $1`,
+      `SELECT id, name, email, phone, password_hash, role FROM users WHERE email = $1`,
       [email.toLowerCase()]
     );
 
@@ -79,7 +79,7 @@ const loginUser = async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const { id, password_hash, role } = result.rows[0];
+    const { id, name, phone, password_hash, role } = result.rows[0];
 
     // 2. Compare hashed password
     const isMatch = await bcrypt.compare(password, password_hash);
@@ -96,7 +96,14 @@ const loginUser = async (req, res, next) => {
 
     res.status(200).json({
       message: 'Login successful',
-      token
+      token,
+      user: {
+        id,
+        name,
+        email: email.toLowerCase(),
+        role,
+        phone
+      }
     });
 
   } catch (error) {
@@ -104,7 +111,28 @@ const loginUser = async (req, res, next) => {
   }
 };
 
+// @desc    Get current logged in user profile
+// @route   GET /api/auth/me
+// @access  Private
+const getMe = async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, role, phone FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.status(200).json({ user: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   registerUser,
-  loginUser
+  loginUser,
+  getMe
 };

@@ -19,9 +19,6 @@ export default function Footer() {
           <p style={{fontSize:13,color:"var(--gray-text)",lineHeight:1.7,maxWidth:260}}>
             The easiest way to discover and book trusted local services. All in a few taps.
           </p>
-          <Link to="/provider" style={{fontSize:13,color:"var(--yellow)",fontWeight:600,textDecoration:"none",display:"inline-block",marginTop:8}}>
-            List your business
-          </Link>
         </div>
         {[
           {title:"Services",links:["Grooming","Real Estate","HealthCare","Sports & Gaming"], isCategory: true},

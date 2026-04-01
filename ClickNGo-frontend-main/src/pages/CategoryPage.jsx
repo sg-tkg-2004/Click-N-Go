@@ -1,15 +1,38 @@
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ProviderRow from "../components/common/ProviderRow";
-import { CATEGORIES, PROVIDERS } from "../data/appData";
+import { CATEGORIES } from "../data/appData";
+import { useCategoryServices } from "../hooks/useCategoryServices";
 
 export default function CategoryPage() {
   const { catId } = useParams();
   const navigate = useNavigate();
   const cat = CATEGORIES.find((c) => c.id === catId);
-  const providers = PROVIDERS[catId] || [];
   const [activeFilter, setActiveFilter] = useState("All");
-  const filters = ["All", ...(cat?.subs || []).slice(0, 5)];
+  const [retryKey, setRetryKey] = useState(0);
+
+  const { services, loading, error } = useCategoryServices(catId, retryKey);
+
+  const filters = useMemo(() => ["All", ...(cat?.subs || []).slice(0, 5)], [cat?.subs]);
+
+  useEffect(() => {
+    setActiveFilter("All");
+  }, [catId]);
+
+  const providers = useMemo(() => {
+    return (services || []).map((s) => ({
+      id: s.id,
+      name: s.title,
+      sub: s.description || "",
+      rating: 4.5,
+      reviews: 0,
+      dist: "Nearby",
+      time: `${s.duration_minutes} mins`,
+      price: s.price,
+      icon: cat?.icon || "/images/GR.png",
+      tags: s.tags || [],
+    }));
+  }, [services, cat?.icon]);
 
   const filteredProviders =
     activeFilter === "All"
@@ -58,14 +81,16 @@ export default function CategoryPage() {
                 backdropFilter: "blur(10px)",
               }}
             >
-              <img src={cat?.icon} alt={cat?.label} style={{ width: 28, height: 28 }} />
+              {cat?.icon ? <img src={cat.icon} alt={cat?.label} style={{ width: 28, height: 28 }} /> : null}
             </span>
             <div>
               <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Playfair Display',serif" }}>
-                {cat?.label}
+                {cat?.label ?? "Category"}
               </div>
               <div style={{ fontSize: 13, color: "var(--gray-mid)" }}>
-                {filteredProviders.length} provider{filteredProviders.length !== 1 ? "s" : ""} near you
+                {loading
+                  ? "Loading…"
+                  : `${filteredProviders.length} service${filteredProviders.length !== 1 ? "s" : ""} in this category`}
               </div>
             </div>
           </div>
@@ -93,7 +118,26 @@ export default function CategoryPage() {
             background: "rgba(255,255,255,0.02)",
           }}
         >
-          {filteredProviders.length === 0 ? (
+          {loading ? (
+            <div style={{ padding: 48, textAlign: "center", color: "var(--gray-mid)", fontSize: 15 }}>
+              Loading services…
+            </div>
+          ) : error ? (
+            <div style={{ padding: 48, textAlign: "center" }}>
+              <div style={{ color: "var(--gray-mid)", fontSize: 15, marginBottom: 16 }}>
+                {error === "unknown_category"
+                  ? "This category link does not match any category on the server. Try another category."
+                  : "Could not load services."}
+              </div>
+              <button type="button" className="btn btn-yellow" style={{ fontSize: 13 }} onClick={() => setRetryKey((k) => k + 1)}>
+                Retry
+              </button>
+            </div>
+          ) : !loading && filteredProviders.length === 0 && activeFilter === "All" ? (
+            <div style={{ padding: 48, textAlign: "center", color: "var(--gray-mid)", fontSize: 15 }}>
+              No services found for this category yet.
+            </div>
+          ) : filteredProviders.length === 0 ? (
             <div
               style={{
                 padding: 48,
@@ -102,7 +146,7 @@ export default function CategoryPage() {
                 fontSize: 15,
               }}
             >
-              No providers match "{activeFilter}". Try another filter.
+              No services match “{activeFilter}”. Try another filter.
             </div>
           ) : (
             filteredProviders.map((p, i) => (

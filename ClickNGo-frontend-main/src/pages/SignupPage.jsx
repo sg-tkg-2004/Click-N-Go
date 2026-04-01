@@ -6,6 +6,7 @@ export default function SignupPage() {
   const { registerFn, loginFn, showToast } = useAppContext();
   const navigate = useNavigate();
   const [form, setForm] = useState({ first: "", last: "", email: "", phone: "", pass: "", confirm: "" });
+  const [role, setRole] = useState("");
   const [loading, setLoading] = useState(false);
 
   function set(k) {
@@ -17,6 +18,10 @@ export default function SignupPage() {
       showToast("Please fill all fields");
       return;
     }
+    if (!role) {
+      showToast("Please select a role");
+      return;
+    }
     if (form.pass !== form.confirm) {
       showToast("Passwords do not match");
       return;
@@ -25,8 +30,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const name = `${form.first} ${form.last}`;
-      // Register with backend
-      await registerFn(name, form.email, form.pass, "CUSTOMER", form.phone);
+      await registerFn(name, form.email, form.pass, role, form.phone);
       
       // Auto-login after successful registration
       await loginFn(form.email, form.pass);
@@ -110,6 +114,20 @@ export default function SignupPage() {
                 value={form.phone}
                 onChange={set("phone")}
               />
+            </div>
+            <div>
+              <label className="form-label">Role</label>
+              <select
+                required
+                className="form-input"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                style={{ background: "#fff", color: "var(--white)" }}
+              >
+                <option value="">Select Role</option>
+                <option value="CUSTOMER">Customer</option>
+                <option value="PROVIDER">Provider</option>
+              </select>
             </div>
             <div>
               <label className="form-label">Create Password</label>

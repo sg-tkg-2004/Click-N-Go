@@ -540,6 +540,29 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer;}
   text-decoration:line-through;
 }
 
+.slot-btn{
+  padding:10px 12px;border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.06);
+  font-size:13px;font-weight:600;text-align:center;
+  color:var(--white);
+  transition:all .2s var(--ease);
+}
+.slot-btn:hover:not(:disabled){
+  border-color:var(--yellow);
+  background:rgba(255,224,51,0.08);
+}
+.slot-btn-selected{
+  border-color:var(--yellow)!important;
+  background:var(--yellow-dim)!important;
+  color:var(--white)!important;
+}
+.slot-btn-disabled{
+  opacity:0.45;
+  cursor:not-allowed;
+  background:rgba(0,0,0,0.04);
+}
+
 /* PROVIDER LISTING CARD */
 .provider-card{
   display:flex;align-items:flex-start;gap:16px;
